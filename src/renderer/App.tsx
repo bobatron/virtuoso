@@ -43,6 +43,8 @@ const App: FC = () => {
   const [currentTemplate, setCurrentTemplate] = useState<StanzaTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState('');
 
   useEffect(() => {
     // Load accounts and templates from backend on mount
@@ -232,16 +234,19 @@ const App: FC = () => {
     toast.success(`Loaded saved template: ${template.name}`);
   };
 
-  const handleSaveTemplate = async () => {
+  const handleSaveTemplate = () => {
     if (!currentTemplate) return;
+    setSaveName(currentTemplate.name);
+    setShowSaveModal(true);
+  };
 
-    const name = prompt('Enter a name for this template:', currentTemplate.name);
-    if (!name) return;
+  const confirmSaveTemplate = async () => {
+    if (!currentTemplate || !saveName) return;
 
     const newTemplate: SavedTemplate = {
       ...currentTemplate,
       id: crypto.randomUUID(),
-      name,
+      name: saveName,
       values: templateValues
     };
 
@@ -250,6 +255,7 @@ const App: FC = () => {
     if (result?.success) {
       setSavedTemplates([...savedTemplates, newTemplate]);
       toast.success('Template saved successfully');
+      setShowSaveModal(false);
     } else {
       toast.error('Failed to save template');
     }
@@ -622,6 +628,27 @@ const App: FC = () => {
               Select an account from the sidebar to send stanzas<br />
               or click "Add Account" to create a new one
             </p>
+          </div>
+        </div>
+      )}
+
+      {showSaveModal && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: 'var(--radius-md)', width: '300px', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem', color: 'var(--text-primary)' }}>Save Template</h3>
+            <input
+              type="text"
+              className="form-input"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="Template Name"
+              autoFocus
+              style={{ marginBottom: '1rem' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button onClick={() => setShowSaveModal(false)} className="clear-btn">Cancel</button>
+              <button onClick={confirmSaveTemplate} className="form-submit-btn" style={{ width: 'auto' }}>Save</button>
+            </div>
           </div>
         </div>
       )}
