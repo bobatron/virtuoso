@@ -25,7 +25,6 @@ const App: React.FC = () => {
   const [responses, setResponses] = useState<{ accountId: string, stanza: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [form, setForm] = useState<Omit<Account, 'status'>>({ id: '', jid: '', password: '', host: '', port: '5222' });
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [selectedResponse, setSelectedResponse] = useState<number | null>(null);
   const [localForm, setLocalForm] = useState({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
@@ -84,10 +83,6 @@ const App: React.FC = () => {
       }
     });
   }, [accounts]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
 
   const handleLocalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setLocalForm({ ...localForm, [e.target.name]: e.target.value });
