@@ -22,13 +22,13 @@ type Account = {
 
 const App: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [responses, setResponses] = useState<{accountId: string, stanza: string}[]>([]);
+  const [responses, setResponses] = useState<{ accountId: string, stanza: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState<Omit<Account, 'status'>>({ id: '', jid: '', password: '', host: '', port: '5222' });
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [selectedResponse, setSelectedResponse] = useState<number | null>(null);
-  const [localForm, setLocalForm] = useState({ id: '', jid: '', password: '', host: '', port: '5222' });
+  const [localForm, setLocalForm] = useState({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
   const [message, setMessage] = useState('');
 
   // Load accounts from backend on mount
@@ -89,7 +89,7 @@ const App: React.FC = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleLocalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setLocalForm({ ...localForm, [e.target.name]: e.target.value });
   };
 
@@ -103,7 +103,7 @@ const App: React.FC = () => {
     const result = await window.electron?.invoke('add-account', localForm.id, localForm);
     if (result?.success) {
       setAccounts([...accounts, { ...localForm, status: 'disconnected' }]);
-      setLocalForm({ id: '', jid: '', password: '', host: '', port: '5222' });
+      setLocalForm({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
     } else {
       alert(result?.error || 'Failed to add account');
     }
@@ -183,15 +183,52 @@ const App: React.FC = () => {
             <input name="password" type="password" placeholder="Password" value={localForm.password} onChange={handleLocalChange} required />
             <input name="host" placeholder="Host" value={localForm.host} onChange={handleLocalChange} required />
             <input name="port" placeholder="Port" value={localForm.port} onChange={handleLocalChange} required />
+            <select name="connectionMethod" value={localForm.connectionMethod || 'auto'} onChange={handleLocalChange}>
+              <option value="auto">Auto (STARTTLS on 5222, Direct TLS on 5223)</option>
+              <option value="starttls">STARTTLS</option>
+              <option value="direct-tls">Direct TLS</option>
+              <option value="plain">Plain (No Encryption)</option>
+            </select>
             <button type="submit">Add Account</button>
           </form>
         </div>
       );
     }
     if (selectedAccount) {
+      const handleDeleteAccount = async () => {
+        const confirmed = confirm(`Are you sure you want to delete the account "${selectedAccount}"?\n\nNote: Accounts from accounts.json will only be removed from the app, not from the file. Edit accounts.json manually to permanently delete them.`);
+        if (!confirmed) return;
+
+        // @ts-ignore
+        const result = await window.electron?.invoke('remove-account', selectedAccount);
+        if (result?.success) {
+          setAccounts(accs => accs.filter(acc => acc.id !== selectedAccount));
+          setSelectedAccount(null);
+          setResponses([]); // Clear responses for deleted account
+        } else {
+          alert(result?.error || 'Failed to remove account');
+        }
+      };
+
       return (
         <div style={{ padding: '2rem' }}>
-          <h2>Send XML Stanza</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2>Send XML Stanza</h2>
+            <button
+              onClick={handleDeleteAccount}
+              style={{
+                background: '#d32f2f',
+                color: 'white',
+                border: 'none',
+                borderRadius: 4,
+                padding: '0.5rem 1rem',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              Delete Account
+            </button>
+          </div>
           <form onSubmit={handleSendMessage} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: 400 }}>
             <textarea
               value={message}

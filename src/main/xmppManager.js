@@ -1,6 +1,6 @@
 // Account and XMPP connection manager for Virtuoso
 const { client, xml } = require('@xmpp/client');
-const { loadAccounts, saveAccounts } = require('./accountStore');
+const { loadAccounts, saveAccount, removeAccount: removeAccountFromStore } = require('./accountStore');
 const ltx = require('ltx');
 
 class XMPPManager {
@@ -9,22 +9,54 @@ class XMPPManager {
     this.accountData = loadAccounts();
   }
 
-  addAccount(accountId, { jid, password, host, port }) {
-    this.accountData[accountId] = { jid, password, host, port };
-    saveAccounts(this.accountData);
-    console.log(`[XMPP] addAccount called: accountId=${accountId}, jid=${jid}, host=${host}, port=${port}`);
+  addAccount(accountId, { jid, password, host, port, connectionMethod, _source }) {
+    // Determine if this is a dev account (from accounts.json) or UI account
+    const source = _source || 'ui'; // Default to 'ui' for new accounts
+
+    // Save to appropriate storage
+    const accountInfo = { jid, password, host, port, connectionMethod };
+    saveAccount(accountId, accountInfo, source);
+
+    // Update in-memory data with source tracking
+    this.accountData[accountId] = { ...accountInfo, _source: source };
+    console.log(`[XMPP] addAccount called: accountId=${accountId}, jid=${jid}, host=${host}, port=${port}, method=${connectionMethod || 'auto'}`);
     if (this.accounts[accountId]) {
       throw new Error('Account already exists');
     }
     const username = jid.includes('@') ? jid.split('@')[0] : jid;
     console.log(`[XMPP] Extracted username: ${username}`);
+
+    // Determine connection protocol
+    // Auto: Use xmpps for port 5223 (Direct TLS), xmpp for 5222 (STARTTLS)
+    let protocol;
+    if (connectionMethod === 'direct-tls') {
+      protocol = 'xmpps';
+    } else if (connectionMethod === 'plain') {
+      protocol = 'xmpp';
+    } else {
+      // Auto-detect based on port
+      protocol = port === '5223' ? 'xmpps' : 'xmpp';
+    }
+
+    console.log(`[XMPP] Using protocol: ${protocol}`);
+
+    // TLS options - accept self-signed certificates for development
+    // In production, you should use properly signed certificates
+    const tlsOptions = {
+      rejectUnauthorized: false // Allow self-signed certificates (OpenFire default)
+    };
+
     const xmpp = client({
-      service: `xmpp://${host}:${port}`,
+      service: `${protocol}://${host}:${port}`,
       domain: host,
       resource: 'virtuoso',
       username,
-      password
+      password,
+      // Apply TLS options for all encrypted connections (both STARTTLS and Direct TLS)
+      // Only skip TLS options if explicitly using 'plain' connection
+      ...(connectionMethod !== 'plain' ? { tls: tlsOptions } : {})
     });
+    console.log(`[XMPP] Applied TLS options: ${connectionMethod !== 'plain'}`);
     console.log(`[XMPP] XMPP client created for ${accountId}`);
     xmpp.on('error', err => {
       console.error(`[XMPP][${accountId}] Connection error:`, err);
@@ -116,12 +148,26 @@ class XMPPManager {
   disconnect(accountId) {
     const account = this.accounts[accountId];
     if (!account) throw new Error('Account not found');
-    account.xmpp.stop().catch(console.error);
+    return account.xmpp.stop().catch(console.error);
   }
 
-  removeAccount(accountId) {
-    this.disconnect(accountId);
+  async removeAccount(accountId) {
+    const source = this.accountData[accountId]?._source || 'ui';
+
+    // Disconnect first and wait for it to complete
+    try {
+      const account = this.accounts[accountId];
+      if (account && account.xmpp) {
+        await account.xmpp.stop();
+      }
+    } catch (err) {
+      console.error(`[XMPP] Error disconnecting account ${accountId}:`, err);
+    }
+
+    // Now safely remove from storage and memory
+    removeAccountFromStore(accountId, source);
     delete this.accounts[accountId];
+    delete this.accountData[accountId];
   }
 
   removeMessageListener(accountId, listener) {
