@@ -1,0 +1,14 @@
+{
+  "test": {
+    "jid": "test@localhost",
+    "password": "password",
+    "host": "localhost",
+    "port": "5222"
+  },
+  "user2": {
+    "jid": "user2@example.com",
+    "password": "secret123",
+    "host": "example.com",
+    "port": "5222"
+  }
+}
