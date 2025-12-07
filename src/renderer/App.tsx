@@ -1,26 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FC } from 'react';
+import toast from 'react-hot-toast';
+import { FiPlus, FiTrash2, FiCheckCircle, FiAlertCircle, FiCircle, FiLoader } from 'react-icons/fi';
+import './App.css';
 
-declare global {
-  interface Window {
-    electron?: {
-      invoke: (channel: string, ...args: any[]) => Promise<any>;
-      send: (channel: string, ...args: any[]) => void;
-      on: (channel: string, callback: (...args: any[]) => void) => void;
-      off: (channel: string, callback: (...args: any[]) => void) => void;
-    };
-  }
-}
-
-type Account = {
+interface Account {
   id: string;
   jid: string;
   password: string;
   host: string;
   port: string;
   status: string;
-};
+}
 
-const App: React.FC = () => {
+const App: FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [responses, setResponses] = useState<{ accountId: string, stanza: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
@@ -30,7 +22,6 @@ const App: React.FC = () => {
   const [localForm, setLocalForm] = useState({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
   const [message, setMessage] = useState('');
 
-  // Load accounts from backend on mount
   useEffect(() => {
     // Load accounts from backend on mount
     // @ts-ignore
@@ -100,19 +91,24 @@ const App: React.FC = () => {
     setLocalForm({ ...localForm, [e.target.name]: e.target.value });
   };
 
-  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
-  };
-
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!localForm.id || !localForm.jid || !localForm.password || !localForm.host || !localForm.port) return;
-    const result = await window.electron?.invoke('add-account', localForm.id, localForm);
+    // @ts-ignore
+    const result = await window.electron?.invoke('add-account', localForm.id, {
+      jid: localForm.jid,
+      password: localForm.password,
+      host: localForm.host,
+      port: localForm.port,
+      connectionMethod: localForm.connectionMethod
+    });
+
     if (result?.success) {
       setAccounts([...accounts, { ...localForm, status: 'disconnected' }]);
       setLocalForm({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
+      setShowAddForm(false);
+      toast.success(`Account "${localForm.id}" added successfully`);
     } else {
-      alert(result?.error || 'Failed to add account');
+      toast.error(result?.error || 'Failed to add account');
     }
   };
 
@@ -134,8 +130,9 @@ const App: React.FC = () => {
     const result = await window.electron?.invoke('remove-account', id);
     if (result?.success) {
       setAccounts(accs => accs.filter(acc => acc.id !== id));
+      toast.success(`Account "${id}" removed`);
     } else {
-      alert(result?.error || 'Failed to remove account');
+      toast.error(result?.error || 'Failed to remove account');
     }
   };
 
@@ -144,61 +141,86 @@ const App: React.FC = () => {
     if (!selectedAccount || !message) return;
     // @ts-ignore
     const result = await window.electron?.invoke('send-stanza', selectedAccount, message);
-    setSendStatus(result?.success ? 'Message sent!' : `Error: ${result?.error || 'Failed to send'}`);
+    if (result?.success) {
+      setSendStatus('Message sent!');
+      toast.success('Stanza sent successfully');
+    } else {
+      setSendStatus(`Error: ${result?.error || 'Failed to send'}`);
+      toast.error(result?.error || 'Failed to send stanza');
+    }
     setTimeout(() => setSendStatus(null), 3000);
   };
 
-  // Sidebar: accounts + status icon + toggle
-  const Sidebar = () => (
-    <div style={{ width: 180, background: '#f4f4f4', padding: '1rem', borderRight: '1px solid #ccc', height: '100vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflowX: 'hidden' }}>
-      <button style={{ width: '100%', maxWidth: '100%', marginBottom: '1rem', fontWeight: 'bold', background: '#1976d2', color: 'white', border: 'none', borderRadius: 4, padding: '0.75rem', cursor: 'pointer', boxSizing: 'border-box' }} onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}>+ Add XMPP Account</button>
-      <ul style={{ listStyle: 'none', padding: 0, flex: 1, overflowY: 'auto', width: '100%', margin: 0, boxSizing: 'border-box' }}>
-        {accounts.map(acc => {
-          // Determine status color and symbol
-          const getStatusColor = (status: string) => {
-            if (status === 'connected' || status === 'online') return '#4caf50'; // Green
-            if (status === 'connecting' || status === 'opening' || status === 'connect') return '#ff9800'; // Orange
-            if (status === 'error') return '#f44336'; // Red
-            return '#9e9e9e'; // Gray
-          };
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+  };
 
-          const getStatusSymbol = (status: string) => {
-            if (status === 'connected' || status === 'online') return '✔️';
-            if (status === 'connecting' || status === 'opening' || status === 'connect') return '⟳';
-            if (status === 'error') return '⚠️';
-            return '○';
-          };
+  const getStatusColor = (status: string) => {
+    if (status === 'connected' || status === 'online') return 'status-online';
+    if (status === 'connecting' || status === 'opening' || status === 'connect') return 'status-connecting';
+    if (status === 'error') return 'status-error';
+    return 'status-offline';
+  };
+
+  const getStatusIcon = (status: string) => {
+    if (status === 'connected' || status === 'online') return <FiCheckCircle />;
+    if (status === 'connecting' || status === 'opening' || status === 'connect') return <FiLoader className="spinner" />;
+    if (status === 'error') return <FiAlertCircle />;
+    return <FiCircle />;
+  };
+
+  // Sidebar Component
+  const Sidebar = () => (
+    <div className="sidebar">
+      <div className="sidebar-header">
+        <button
+          className="add-account-btn"
+          onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}
+        >
+          <FiPlus style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+          Add Account
+        </button>
+      </div>
+
+      <ul className="accounts-list">
+        {accounts.map(acc => {
+          const isSelected = selectedAccount === acc.id;
+          const isConnected = acc.status === 'connected' || acc.status === 'online';
+          const isConnecting = acc.status === 'connecting' || acc.status === 'opening' || acc.status === 'connect';
 
           return (
-            <li key={acc.id} style={{ marginBottom: '1rem', background: selectedAccount === acc.id ? '#e3f2fd' : undefined, padding: '0.5rem', borderRadius: 4, width: '100%', boxSizing: 'border-box' }}>
-              <div style={{ cursor: 'pointer' }} onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                  <strong style={{ wordBreak: 'break-all', flex: 1 }}>{acc.id}</strong>
-                  <span title={acc.status} style={{ fontSize: 18 }}>{getStatusSymbol(acc.status)}</span>
+            <li
+              key={acc.id}
+              className={`account-item ${isSelected ? 'selected' : ''}`}
+            >
+              <div onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
+                <div className="account-header">
+                  <span className="account-name">{acc.id}</span>
+                  <span className={`status-icon ${getStatusColor(acc.status)}`}>
+                    {getStatusIcon(acc.status)}
+                  </span>
                 </div>
-                <div style={{
-                  fontSize: '0.75rem',
-                  color: getStatusColor(acc.status),
-                  textTransform: 'capitalize',
-                  fontWeight: 500
-                }}>
+                <div className={`account-status ${getStatusColor(acc.status)}`}>
                   {acc.status}
                 </div>
               </div>
-              {/* Toggle switch for connect/disconnect */}
-              <span style={{ marginLeft: 8 }}>
-                <label style={{ display: 'inline-block', width: 36, height: 20, position: 'relative', maxWidth: '100%' }}>
+
+              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <label className="toggle-switch">
                   <input
                     type="checkbox"
-                    checked={acc.status === 'connected' || acc.status === 'online'}
-                    disabled={acc.status === 'connecting' || acc.status === 'opening' || acc.status === 'connect'}
-                    onChange={() => (acc.status === 'connected' || acc.status === 'online') ? handleDisconnect(acc.id) : handleConnect(acc.id)}
-                    style={{ opacity: 0, width: 0, height: 0 }}
+                    checked={isConnected}
+                    disabled={isConnecting}
+                    onChange={() => isConnected ? handleDisconnect(acc.id) : handleConnect(acc.id)}
                   />
-                  <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, background: (acc.status === 'connected' || acc.status === 'online') ? '#43a047' : '#ccc', borderRadius: 20, transition: 'background 0.2s', width: 36, height: 20 }}></span>
-                  <span style={{ position: 'absolute', left: (acc.status === 'connected' || acc.status === 'online') ? 18 : 2, top: 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s' }}></span>
+                  <span className={`toggle-slider ${isConnected ? 'checked' : ''}`}>
+                    <span className={`toggle-knob ${isConnected ? 'checked' : ''}`}></span>
+                  </span>
                 </label>
-              </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </li>
           );
         })}
@@ -206,29 +228,98 @@ const App: React.FC = () => {
     </div>
   );
 
-  // Main content area
+  // Main Content Component
   const MainContent = () => {
     if (showAddForm) {
       return (
-        <div style={{ padding: '2rem' }}>
-          <h2>Add XMPP Account</h2>
-          <form onSubmit={handleAddAccount} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: 400 }}>
-            <input name="id" placeholder="Account ID" value={localForm.id} onChange={handleLocalChange} required />
-            <input name="jid" placeholder="JID (user@domain)" value={localForm.jid} onChange={handleLocalChange} required />
-            <input name="password" type="password" placeholder="Password" value={localForm.password} onChange={handleLocalChange} required />
-            <input name="host" placeholder="Host" value={localForm.host} onChange={handleLocalChange} required />
-            <input name="port" placeholder="Port" value={localForm.port} onChange={handleLocalChange} required />
-            <select name="connectionMethod" value={localForm.connectionMethod || 'auto'} onChange={handleLocalChange}>
-              <option value="auto">Auto (STARTTLS on 5222, Direct TLS on 5223)</option>
-              <option value="starttls">STARTTLS</option>
-              <option value="direct-tls">Direct TLS</option>
-              <option value="plain">Plain (No Encryption)</option>
-            </select>
-            <button type="submit">Add Account</button>
+        <div className="main-content">
+          <h2 className="content-title">Add New Account</h2>
+          <form onSubmit={handleAddAccount} className="form-container">
+            <div className="form-group">
+              <label className="form-label">Account ID</label>
+              <input
+                className="form-input"
+                type="text"
+                name="id"
+                value={localForm.id}
+                onChange={handleLocalChange}
+                placeholder="my-account"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">JID (Jabber ID)</label>
+              <input
+                className="form-input"
+                type="text"
+                name="jid"
+                value={localForm.jid}
+                onChange={handleLocalChange}
+                placeholder="user@domain.com"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input
+                className="form-input"
+                type="password"
+                name="password"
+                value={localForm.password}
+                onChange={handleLocalChange}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Host</label>
+              <input
+                className="form-input"
+                type="text"
+                name="host"
+                value={localForm.host}
+                onChange={handleLocalChange}
+                placeholder="localhost"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Port</label>
+              <input
+                className="form-input"
+                type="text"
+                name="port"
+                value={localForm.port}
+                onChange={handleLocalChange}
+                placeholder="5222"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Connection Method</label>
+              <select
+                className="form-input"
+                name="connectionMethod"
+                value={localForm.connectionMethod}
+                onChange={handleLocalChange}
+              >
+                <option value="auto">Auto</option>
+                <option value="starttls">STARTTLS</option>
+                <option value="directtls">Direct TLS</option>
+                <option value="plain">Plain (No Encryption)</option>
+              </select>
+            </div>
+
+            <button type="submit" className="form-submit-btn">Add Account</button>
           </form>
         </div>
       );
     }
+
     if (selectedAccount) {
       const handleDeleteAccount = async () => {
         const confirmed = confirm(`Are you sure you want to delete the account "${selectedAccount}"?\n\nNote: Accounts from accounts.json will only be removed from the app, not from the file. Edit accounts.json manually to permanently delete them.`);
@@ -239,71 +330,103 @@ const App: React.FC = () => {
         if (result?.success) {
           setAccounts(accs => accs.filter(acc => acc.id !== selectedAccount));
           setSelectedAccount(null);
-          setResponses([]); // Clear responses for deleted account
+          setResponses([]);
+          toast.success('Account deleted');
         } else {
-          alert(result?.error || 'Failed to remove account');
+          toast.error(result?.error || 'Failed to remove account');
         }
       };
 
       return (
-        <div style={{ padding: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2>Send XML Stanza</h2>
+        <div className="main-content">
+          <div className="content-header">
+            <h2 className="content-title">Send XML Stanza</h2>
             <button
               onClick={handleDeleteAccount}
-              style={{
-                background: '#d32f2f',
-                color: 'white',
-                border: 'none',
-                borderRadius: 4,
-                padding: '0.5rem 1rem',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
+              className="delete-account-btn"
             >
+              <FiTrash2 style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
               Delete Account
             </button>
           </div>
-          <form onSubmit={handleSendMessage} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: 400 }}>
-            <textarea
-              value={message}
-              onChange={handleMessageChange}
-              placeholder="Paste XML stanza here"
-              rows={6}
-              style={{ fontFamily: 'monospace' }}
-              required
-            />
-            <button type="submit">Send Stanza</button>
-            {sendStatus && <div style={{ color: sendStatus.startsWith('Error') ? 'red' : 'green' }}>{sendStatus}</div>}
-          </form>
-          <h2>Stanza Responses</h2>
-          <button onClick={() => { setResponses(responses.filter(r => r.accountId !== selectedAccount)); setSelectedResponse(null); }} style={{ marginBottom: '0.5rem' }}>Clear Responses</button>
-          <ul style={{ maxHeight: 200, overflowY: 'auto', background: '#f9f9f9', padding: '0.5rem', border: '1px solid #ccc' }}>
-            {responses.filter(r => r.accountId === selectedAccount).map((resp, idx) => (
-              <li key={idx} style={{ marginBottom: '0.5rem', cursor: 'pointer', background: selectedResponse === idx ? '#e0e0e0' : undefined }} onClick={() => setSelectedResponse(idx)}>
-                <span style={{ color: '#555' }}>{resp.stanza.slice(0, 60)}{resp.stanza.length > 60 ? '...' : ''}</span>
-              </li>
-            ))}
-            {responses.filter(r => r.accountId === selectedAccount).length === 0 && <li style={{ color: '#888' }}>No responses yet.</li>}
-          </ul>
-          {selectedResponse !== null && responses.filter(r => r.accountId === selectedAccount)[selectedResponse] && (
-            <div style={{ background: '#f9f9f9', padding: '0.5rem', border: '1px solid #ccc', marginTop: '1rem' }}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{responses.filter(r => r.accountId === selectedAccount)[selectedResponse]?.stanza ?? ''}</pre>
+
+          <form onSubmit={handleSendMessage} className="form-container">
+            <div className="form-group">
+              <label className="form-label">XML Stanza</label>
+              <textarea
+                className="form-input form-textarea"
+                value={message}
+                onChange={handleMessageChange}
+                placeholder="Paste XML stanza here"
+                rows={6}
+                required
+              />
             </div>
-          )}
+            <button type="submit" className="form-submit-btn">Send Stanza</button>
+            {sendStatus && (
+              <div className={`form-status ${sendStatus.startsWith('Error') ? 'error' : 'success'}`}>
+                {sendStatus}
+              </div>
+            )}
+          </form>
+
+          <div className="responses-section">
+            <div className="responses-header">
+              <h3 className="section-title">Stanza Responses</h3>
+              <button
+                onClick={() => { setResponses(responses.filter(r => r.accountId !== selectedAccount)); setSelectedResponse(null); }}
+                className="clear-btn"
+              >
+                Clear Responses
+              </button>
+            </div>
+
+            <ul className="responses-list">
+              {responses.filter(r => r.accountId === selectedAccount).map((resp, idx) => (
+                <li
+                  key={idx}
+                  className={`response-item ${selectedResponse === idx ? 'selected' : ''}`}
+                  onClick={() => setSelectedResponse(idx)}
+                >
+                  <span>{resp.stanza.slice(0, 60)}{resp.stanza.length > 60 ? '...' : ''}</span>
+                </li>
+              ))}
+              {responses.filter(r => r.accountId === selectedAccount).length === 0 && (
+                <li className="empty-state-text" style={{ padding: '1rem', textAlign: 'center' }}>
+                  No responses yet.
+                </li>
+              )}
+            </ul>
+
+            {selectedResponse !== null && responses.filter(r => r.accountId === selectedAccount)[selectedResponse] && (
+              <div className="response-detail">
+                <pre className="response-code">
+                  {responses.filter(r => r.accountId === selectedAccount)[selectedResponse]?.stanza ?? ''}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       );
     }
-    return <div style={{ padding: '2rem', color: '#888' }}>Select an account or add a new one.</div>;
+
+    return (
+      <div className="main-content">
+        <div className="empty-state">
+          <div className="empty-state-icon">📬</div>
+          <p className="empty-state-text">
+            Select an account from the sidebar to send stanzas<br />
+            or click "Add Account" to create a new one
+          </p>
+        </div>
+      </div>
+    );
   };
 
-  // Layout
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
-      {Sidebar()}
-      <div style={{ flex: 1 }}>
-        {MainContent()}
-      </div>
+    <div className="app-container">
+      <Sidebar />
+      <MainContent />
     </div>
   );
 };
