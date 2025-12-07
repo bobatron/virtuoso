@@ -228,9 +228,9 @@ const App: React.FC = () => {
   // Layout
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
-      <Sidebar />
+      {Sidebar()}
       <div style={{ flex: 1 }}>
-        <MainContent />
+        {MainContent()}
       </div>
     </div>
   );
