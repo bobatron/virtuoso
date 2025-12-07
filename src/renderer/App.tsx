@@ -1,7 +1,19 @@
-import React, { useState, useEffect, FC } from 'react';
+import React, { useState, useEffect } from 'react';
+import type { FC } from 'react';
 import toast from 'react-hot-toast';
 import { FiPlus, FiTrash2, FiCheckCircle, FiAlertCircle, FiCircle, FiLoader } from 'react-icons/fi';
 import './App.css';
+
+declare global {
+  interface Window {
+    electron?: {
+      invoke: (channel: string, ...args: any[]) => Promise<any>;
+      send: (channel: string, ...args: any[]) => void;
+      on: (channel: string, callback: (...args: any[]) => void) => void;
+      off: (channel: string, callback: (...args: any[]) => void) => void;
+    };
+  }
+}
 
 interface Account {
   id: string;
@@ -113,24 +125,27 @@ const App: FC = () => {
   };
 
   const handleConnect = async (id: string) => {
-    // Don't set status here - let the backend status events handle it
-    // This prevents showing 'connected' when the connection actually failed
     // @ts-ignore
     await window.electron?.invoke('connect-account', id);
   };
 
   const handleDisconnect = async (id: string) => {
-    // Don't set status here - let the backend status events handle it
     // @ts-ignore
     await window.electron?.invoke('disconnect-account', id);
   };
 
-  const handleRemove = async (id: string) => {
+  const handleDeleteAccount = async () => {
+    if (!selectedAccount) return;
+    const confirmed = confirm(`Are you sure you want to delete the account "${selectedAccount}"?\n\nNote: Accounts from accounts.json will only be removed from the app, not from the file. Edit accounts.json manually to permanently delete them.`);
+    if (!confirmed) return;
+
     // @ts-ignore
-    const result = await window.electron?.invoke('remove-account', id);
+    const result = await window.electron?.invoke('remove-account', selectedAccount);
     if (result?.success) {
-      setAccounts(accs => accs.filter(acc => acc.id !== id));
-      toast.success(`Account "${id}" removed`);
+      setAccounts(accs => accs.filter(acc => acc.id !== selectedAccount));
+      setSelectedAccount(null);
+      setResponses([]);
+      toast.success('Account deleted');
     } else {
       toast.error(result?.error || 'Failed to remove account');
     }
@@ -169,69 +184,65 @@ const App: FC = () => {
     return <FiCircle />;
   };
 
-  // Sidebar Component
-  const Sidebar = () => (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <button
-          className="add-account-btn"
-          onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}
-        >
-          <FiPlus style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-          Add Account
-        </button>
+  return (
+    <div className="app-container">
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <button
+            className="add-account-btn"
+            onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}
+          >
+            <FiPlus style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+            Add Account
+          </button>
+        </div>
+
+        <ul className="accounts-list">
+          {accounts.map(acc => {
+            const isSelected = selectedAccount === acc.id;
+            const isConnected = acc.status === 'connected' || acc.status === 'online';
+            const isConnecting = acc.status === 'connecting' || acc.status === 'opening' || acc.status === 'connect';
+
+            return (
+              <li
+                key={acc.id}
+                className={`account-item ${isSelected ? 'selected' : ''}`}
+              >
+                <div onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
+                  <div className="account-header">
+                    <span className="account-name">{acc.id}</span>
+                    <span className={`status-icon ${getStatusColor(acc.status)}`}>
+                      {getStatusIcon(acc.status)}
+                    </span>
+                  </div>
+                  <div className={`account-status ${getStatusColor(acc.status)}`}>
+                    {acc.status}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={isConnected}
+                      disabled={isConnecting}
+                      onChange={() => isConnected ? handleDisconnect(acc.id) : handleConnect(acc.id)}
+                    />
+                    <span className={`toggle-slider ${isConnected ? 'checked' : ''}`}>
+                      <span className={`toggle-knob ${isConnected ? 'checked' : ''}`}></span>
+                    </span>
+                  </label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
-      <ul className="accounts-list">
-        {accounts.map(acc => {
-          const isSelected = selectedAccount === acc.id;
-          const isConnected = acc.status === 'connected' || acc.status === 'online';
-          const isConnecting = acc.status === 'connecting' || acc.status === 'opening' || acc.status === 'connect';
-
-          return (
-            <li
-              key={acc.id}
-              className={`account-item ${isSelected ? 'selected' : ''}`}
-            >
-              <div onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
-                <div className="account-header">
-                  <span className="account-name">{acc.id}</span>
-                  <span className={`status-icon ${getStatusColor(acc.status)}`}>
-                    {getStatusIcon(acc.status)}
-                  </span>
-                </div>
-                <div className={`account-status ${getStatusColor(acc.status)}`}>
-                  {acc.status}
-                </div>
-              </div>
-
-              <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={isConnected}
-                    disabled={isConnecting}
-                    onChange={() => isConnected ? handleDisconnect(acc.id) : handleConnect(acc.id)}
-                  />
-                  <span className={`toggle-slider ${isConnected ? 'checked' : ''}`}>
-                    <span className={`toggle-knob ${isConnected ? 'checked' : ''}`}></span>
-                  </span>
-                </label>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-
-  // Main Content Component
-  const MainContent = () => {
-    if (showAddForm) {
-      return (
+      {showAddForm ? (
         <div className="main-content">
           <h2 className="content-title">Add New Account</h2>
           <form onSubmit={handleAddAccount} className="form-container">
@@ -317,27 +328,7 @@ const App: FC = () => {
             <button type="submit" className="form-submit-btn">Add Account</button>
           </form>
         </div>
-      );
-    }
-
-    if (selectedAccount) {
-      const handleDeleteAccount = async () => {
-        const confirmed = confirm(`Are you sure you want to delete the account "${selectedAccount}"?\n\nNote: Accounts from accounts.json will only be removed from the app, not from the file. Edit accounts.json manually to permanently delete them.`);
-        if (!confirmed) return;
-
-        // @ts-ignore
-        const result = await window.electron?.invoke('remove-account', selectedAccount);
-        if (result?.success) {
-          setAccounts(accs => accs.filter(acc => acc.id !== selectedAccount));
-          setSelectedAccount(null);
-          setResponses([]);
-          toast.success('Account deleted');
-        } else {
-          toast.error(result?.error || 'Failed to remove account');
-        }
-      };
-
-      return (
+      ) : selectedAccount ? (
         <div className="main-content">
           <div className="content-header">
             <h2 className="content-title">Send XML Stanza</h2>
@@ -407,26 +398,17 @@ const App: FC = () => {
             )}
           </div>
         </div>
-      );
-    }
-
-    return (
-      <div className="main-content">
-        <div className="empty-state">
-          <div className="empty-state-icon">📬</div>
-          <p className="empty-state-text">
-            Select an account from the sidebar to send stanzas<br />
-            or click "Add Account" to create a new one
-          </p>
+      ) : (
+        <div className="main-content">
+          <div className="empty-state">
+            <div className="empty-state-icon">📬</div>
+            <p className="empty-state-text">
+              Select an account from the sidebar to send stanzas<br />
+              or click "Add Account" to create a new one
+            </p>
+          </div>
         </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="app-container">
-      <Sidebar />
-      <MainContent />
+      )}
     </div>
   );
 };
