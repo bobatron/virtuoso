@@ -57,19 +57,31 @@ const App: React.FC = () => {
     setResponses(prev => [...prev, { accountId, stanza }]);
   }, []);
 
+  // Memoized statusListener to update account status
+  const statusListener = React.useCallback((_event: any, accountId: string, status: string) => {
+    console.log(`[UI] Status update for ${accountId}: ${status}`);
+    setAccounts(prev =>
+      prev.map(acc =>
+        acc.id === accountId ? { ...acc, status } : acc
+      )
+    );
+  }, []);
+
   // Track if listener is registered to prevent duplicates from React Strict Mode
   const listenerRegisteredRef = React.useRef(false);
 
-  // Only register stanza listener once on mount
+  // Only register stanza and status listeners once on mount
   useEffect(() => {
     if (listenerRegisteredRef.current) return;
     listenerRegisteredRef.current = true;
     window.electron?.on('stanza-response', stanzaListener);
+    window.electron?.on('account-status', statusListener);
     return () => {
       listenerRegisteredRef.current = false;
       window.electron?.off('stanza-response', stanzaListener);
+      window.electron?.off('account-status', statusListener);
     };
-  }, [stanzaListener]);
+  }, [stanzaListener, statusListener]);
 
   // Track subscribed accounts across renders
   const subscribedRef = React.useRef<Set<string>>(new Set());
@@ -105,15 +117,16 @@ const App: React.FC = () => {
   };
 
   const handleConnect = async (id: string) => {
+    // Don't set status here - let the backend status events handle it
+    // This prevents showing 'connected' when the connection actually failed
     // @ts-ignore
-    const result = await window.electron?.invoke('connect-account', id);
-    setAccounts(accs => accs.map(acc => acc.id === id ? { ...acc, status: result?.success ? 'connected' : acc.status } : acc));
+    await window.electron?.invoke('connect-account', id);
   };
 
   const handleDisconnect = async (id: string) => {
+    // Don't set status here - let the backend status events handle it
     // @ts-ignore
-    const result = await window.electron?.invoke('disconnect-account', id);
-    setAccounts(accs => accs.map(acc => acc.id === id ? { ...acc, status: result?.success ? 'disconnected' : acc.status } : acc));
+    await window.electron?.invoke('disconnect-account', id);
   };
 
   const handleRemove = async (id: string) => {
@@ -140,28 +153,55 @@ const App: React.FC = () => {
     <div style={{ width: 180, background: '#f4f4f4', padding: '1rem', borderRight: '1px solid #ccc', height: '100vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflowX: 'hidden' }}>
       <button style={{ width: '100%', maxWidth: '100%', marginBottom: '1rem', fontWeight: 'bold', background: '#1976d2', color: 'white', border: 'none', borderRadius: 4, padding: '0.75rem', cursor: 'pointer', boxSizing: 'border-box' }} onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}>+ Add XMPP Account</button>
       <ul style={{ listStyle: 'none', padding: 0, flex: 1, overflowY: 'auto', width: '100%', margin: 0, boxSizing: 'border-box' }}>
-        {accounts.map(acc => (
-          <li key={acc.id} style={{ marginBottom: '1rem', background: selectedAccount === acc.id ? '#e3f2fd' : undefined, padding: '0.5rem', borderRadius: 4, display: 'flex', alignItems: 'center', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-            <span style={{ cursor: 'pointer', flex: 1, minWidth: 0, maxWidth: '100%' }} onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
-              <strong style={{ wordBreak: 'break-all' }}>{acc.id}</strong>
-            </span>
-            <span style={{ marginLeft: 8 }}>
-              {acc.status === 'connected' ? (
-                <span title="Connected" style={{ color: 'green', fontSize: 20 }}>✔️</span>
-              ) : (
-                <span title="Disconnected" style={{ color: 'red', fontSize: 20 }}>❌</span>
-              )}
-            </span>
-            {/* Toggle switch for connect/disconnect */}
-            <span style={{ marginLeft: 8 }}>
-              <label style={{ display: 'inline-block', width: 36, height: 20, position: 'relative', maxWidth: '100%' }}>
-                <input type="checkbox" checked={acc.status === 'connected'} onChange={() => acc.status === 'connected' ? handleDisconnect(acc.id) : handleConnect(acc.id)} style={{ opacity: 0, width: 0, height: 0 }} />
-                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, background: acc.status === 'connected' ? '#43a047' : '#ccc', borderRadius: 20, transition: 'background 0.2s', width: 36, height: 20 }}></span>
-                <span style={{ position: 'absolute', left: acc.status === 'connected' ? 18 : 2, top: 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s' }}></span>
-              </label>
-            </span>
-          </li>
-        ))}
+        {accounts.map(acc => {
+          // Determine status color and symbol
+          const getStatusColor = (status: string) => {
+            if (status === 'connected' || status === 'online') return '#4caf50'; // Green
+            if (status === 'connecting' || status === 'opening' || status === 'connect') return '#ff9800'; // Orange
+            if (status === 'error') return '#f44336'; // Red
+            return '#9e9e9e'; // Gray
+          };
+
+          const getStatusSymbol = (status: string) => {
+            if (status === 'connected' || status === 'online') return '✔️';
+            if (status === 'connecting' || status === 'opening' || status === 'connect') return '⟳';
+            if (status === 'error') return '⚠️';
+            return '○';
+          };
+
+          return (
+            <li key={acc.id} style={{ marginBottom: '1rem', background: selectedAccount === acc.id ? '#e3f2fd' : undefined, padding: '0.5rem', borderRadius: 4, width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ cursor: 'pointer' }} onClick={() => { setSelectedAccount(acc.id); setShowAddForm(false); setSelectedResponse(null); }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                  <strong style={{ wordBreak: 'break-all', flex: 1 }}>{acc.id}</strong>
+                  <span title={acc.status} style={{ fontSize: 18 }}>{getStatusSymbol(acc.status)}</span>
+                </div>
+                <div style={{
+                  fontSize: '0.75rem',
+                  color: getStatusColor(acc.status),
+                  textTransform: 'capitalize',
+                  fontWeight: 500
+                }}>
+                  {acc.status}
+                </div>
+              </div>
+              {/* Toggle switch for connect/disconnect */}
+              <span style={{ marginLeft: 8 }}>
+                <label style={{ display: 'inline-block', width: 36, height: 20, position: 'relative', maxWidth: '100%' }}>
+                  <input
+                    type="checkbox"
+                    checked={acc.status === 'connected' || acc.status === 'online'}
+                    disabled={acc.status === 'connecting' || acc.status === 'opening' || acc.status === 'connect'}
+                    onChange={() => (acc.status === 'connected' || acc.status === 'online') ? handleDisconnect(acc.id) : handleConnect(acc.id)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, background: (acc.status === 'connected' || acc.status === 'online') ? '#43a047' : '#ccc', borderRadius: 20, transition: 'background 0.2s', width: 36, height: 20 }}></span>
+                  <span style={{ position: 'absolute', left: (acc.status === 'connected' || acc.status === 'online') ? 18 : 2, top: 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s' }}></span>
+                </label>
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
