@@ -5,6 +5,8 @@ import { FiPlus, FiTrash2, FiCheckCircle, FiAlertCircle, FiCircle, FiLoader, FiS
 import { STANZA_TEMPLATES } from './templates';
 import type { StanzaTemplate } from './templates';
 import './App.css';
+import { parseStanza } from './stanzaParser';
+import type { ParsedField } from './stanzaParser';
 
 interface SavedTemplate extends StanzaTemplate {
   id: string;
@@ -613,9 +615,58 @@ const App: FC = () => {
 
             {selectedResponse !== null && responses.filter(r => r.accountId === selectedAccount)[selectedResponse] && (
               <div className="response-detail">
-                <pre className="response-code">
-                  {responses.filter(r => r.accountId === selectedAccount)[selectedResponse]?.stanza ?? ''}
-                </pre>
+                <div className="response-detail-container">
+                  <div className="response-raw">
+                    <h4 className="inspector-section-title">Raw XML</h4>
+                    <pre className="response-code">
+                      {responses.filter(r => r.accountId === selectedAccount)[selectedResponse]?.stanza ?? ''}
+                    </pre>
+                  </div>
+                  <div className="response-inspector">
+                    <h4 className="inspector-section-title">Inspector</h4>
+                    {(() => {
+                      const activeResponse = responses.filter(r => r.accountId === selectedAccount)[selectedResponse!];
+                      const stanza = activeResponse?.stanza ?? '';
+                      const fields = parseStanza(stanza);
+
+                      // Group by section
+                      const sections: Record<string, ParsedField[]> = {};
+                      const mainFields: ParsedField[] = [];
+
+                      fields.forEach(f => {
+                        if (f.section) {
+                          if (!sections[f.section]) sections[f.section] = [];
+                          sections[f.section]!.push(f);
+                        } else {
+                          mainFields.push(f);
+                        }
+                      });
+
+                      return (
+                        <div>
+                          {mainFields.map((f, i) => (
+                            <div key={`main-${i}`} className="inspector-field">
+                              <span className="inspector-key">{f.key}:</span>
+                              <span className="inspector-value">{f.value}</span>
+                            </div>
+                          ))}
+
+                          {Object.entries(sections).map(([section, sFields]) => (
+                            <div key={section} className="inspector-section">
+                              <div className="inspector-section-title">{section}</div>
+                              {sFields.map((f, i) => (
+                                <div key={`${section}-${i}`} className="inspector-field">
+                                  <span className="inspector-key">{f.key}:</span>
+                                  <span className="inspector-value">{f.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
             )}
           </div>
