@@ -39,9 +39,9 @@ export class XMPPManager {
     const accountInfo: AccountData = { 
       jid, 
       password, 
-      host: host || undefined, 
-      port: port || undefined, 
-      connectionMethod: connectionMethod || undefined 
+      host, 
+      port, 
+      connectionMethod 
     };
     saveAccount(accountId, accountInfo, source);
 
