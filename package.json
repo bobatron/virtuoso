@@ -13,7 +13,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
-    "start": "npm run build:main && cross-env NODE_ENV=development NODE_TLS_REJECT_UNAUTHORIZED=0 electron dist/main/main.js"
+    "start": "npm run build:main && cross-env NODE_ENV=development NODE_TLS_REJECT_UNAUTHORIZED=0 electron dist/main/main/main.js"
   },
   "keywords": [],
   "author": "",
