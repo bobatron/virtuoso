@@ -246,7 +246,7 @@ describe('XMPPManager', () => {
 
       // Trigger the stanza listener
       const stanzaListener = mockClient.on.mock.calls.find(
-        (call) => call[0] === 'stanza'
+        (call: any[]) => call[0] === 'stanza'
       )?.[1];
       const mockStanza = { toString: () => '<message/>' };
       stanzaListener(mockStanza);
@@ -267,7 +267,7 @@ describe('XMPPManager', () => {
 
       // Trigger the status listener
       const statusListener = mockClient.on.mock.calls.find(
-        (call) => call[0] === 'status'
+        (call: any[]) => call[0] === 'status'
       )?.[1];
       statusListener('connecting');
 
