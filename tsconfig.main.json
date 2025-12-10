@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-    "types": ["node", "electron"],
+    "types": ["node", "electron", "jest"],
     "verbatimModuleSyntax": false,
     "exactOptionalPropertyTypes": false
   },

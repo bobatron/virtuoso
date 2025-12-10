@@ -36,7 +36,13 @@ export class XMPPManager {
     const source = _source || 'ui'; // Default to 'ui' for new accounts
 
     // Save to appropriate storage
-    const accountInfo: AccountData = { jid, password, host, port, connectionMethod };
+    const accountInfo: AccountData = { 
+      jid, 
+      password, 
+      host: host || undefined, 
+      port: port || undefined, 
+      connectionMethod: connectionMethod || undefined 
+    };
     saveAccount(accountId, accountInfo, source);
 
     // Update in-memory data with source tracking
