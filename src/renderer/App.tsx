@@ -83,13 +83,16 @@ const App: FC = () => {
 
   // Memoized statusListener to update account status
   const statusListener = React.useCallback((accountId: string, status: string) => {
-    console.log(`[UI] Status update for ${accountId}: ${status}`);
-    setAccounts(prev =>
-      prev.map(acc =>
+    console.log(`[UI] Status update for account "${accountId}": "${status}"`);
+    console.log('[UI] Current accounts:', accounts.map(a => ({ id: a.id, status: a.status })));
+    setAccounts(prev => {
+      const updated = prev.map(acc =>
         acc.id === accountId ? { ...acc, status } : acc
-      )
-    );
-  }, []);
+      );
+      console.log('[UI] Updated accounts:', updated.map(a => ({ id: a.id, status: a.status })));
+      return updated;
+    });
+  }, [accounts]);
 
   // Track if listener is registered to prevent duplicates from React Strict Mode
   const listenerRegisteredRef = React.useRef(false);
@@ -121,7 +124,8 @@ const App: FC = () => {
   }, [accounts]);
 
   const handleLocalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setLocalForm({ ...localForm, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setLocalForm(prev => ({ ...prev, [name]: value }));
   };
 
   const handleAddAccount = async (e: React.FormEvent) => {
@@ -380,7 +384,7 @@ const App: FC = () => {
       </div>
 
       {showAddForm ? (
-        <div className="main-content">
+        <div className="main-content" key="add-account-form">
           <h2 className="content-title">Add New Account</h2>
           <form onSubmit={handleAddAccount} className="form-container">
             <div className="form-group">
