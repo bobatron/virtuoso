@@ -35,13 +35,13 @@ export class XMPPManager {
     // Determine if this is a dev account (from accounts.json) or UI account
     const source = _source || 'ui'; // Default to 'ui' for new accounts
 
-    // Save to appropriate storage
+    // Save to appropriate storage - only include optional properties if defined
     const accountInfo: AccountData = { 
       jid, 
-      password, 
-      host, 
-      port, 
-      connectionMethod 
+      password,
+      ...(host !== undefined && { host }),
+      ...(port !== undefined && { port }),
+      ...(connectionMethod !== undefined && { connectionMethod })
     };
     saveAccount(accountId, accountInfo, source);
 
