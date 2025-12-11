@@ -10,6 +10,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:e2e": "npm run build:main && npx playwright test",
     "dev": "vite",
     "build": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
@@ -20,7 +21,6 @@
   "license": "ISC",
   "dependencies": {
     "@xmpp/client": "^0.14.0",
-    "electron": "^39.2.6",
     "electron-store": "^8.1.0",
     "ltx": "^3.1.2",
     "react": "^19.2.1",
@@ -29,6 +29,7 @@
     "react-icons": "^4.12.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/electron": "^1.4.38",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.10.1",
@@ -36,7 +37,9 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "cross-env": "^10.1.0",
+    "electron": "^39.2.6",
     "jest": "^30.2.0",
+    "playwright-core": "^1.57.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3",
     "vite": "^7.2.6"

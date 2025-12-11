@@ -27,28 +27,43 @@ const globalState: GlobalState = {};
 
 // Forward stanza responses and status to renderer
 ipcMain.on('subscribe-stanza', (event, accountId: string) => {
+  console.log(`[IPC] subscribe-stanza called for ${accountId}`);
+  
   // Always update the sender reference (handles hot reload)
   if (!globalState.stanzaSenders) globalState.stanzaSenders = {};
   globalState.stanzaSenders[accountId] = event.sender;
 
   // Only set up the callback once per account
   if (!globalState.stanzaSubscribed) globalState.stanzaSubscribed = {};
-  if (globalState.stanzaSubscribed[accountId]) return;
+  if (globalState.stanzaSubscribed[accountId]) {
+    console.log(`[IPC] Already subscribed to ${accountId}, skipping`);
+    return;
+  }
   globalState.stanzaSubscribed[accountId] = true;
 
-  xmppManager.onMessage(accountId, (stanza) => {
-    const sender = globalState.stanzaSenders?.[accountId];
-    if (sender && !sender.isDestroyed()) {
-      sender.send('stanza-response', accountId, stanza);
-    }
-  });
+  // Check if account exists in xmppManager before setting up callbacks
+  try {
+    xmppManager.onMessage(accountId, (stanza) => {
+      const sender = globalState.stanzaSenders?.[accountId];
+      if (sender && !sender.isDestroyed()) {
+        sender.send('stanza-response', accountId, stanza);
+      }
+    });
 
-  xmppManager.onStatus(accountId, (status) => {
-    const sender = globalState.stanzaSenders?.[accountId];
-    if (sender && !sender.isDestroyed()) {
-      sender.send('account-status', accountId, status);
-    }
-  });
+    xmppManager.onStatus(accountId, (status) => {
+      console.log(`[IPC] Sending status update to renderer: ${accountId} -> ${status}`);
+      const sender = globalState.stanzaSenders?.[accountId];
+      if (sender && !sender.isDestroyed()) {
+        sender.send('account-status', accountId, status);
+      }
+    });
+    console.log(`[IPC] Successfully subscribed to ${accountId}`);
+  } catch (err) {
+    console.log(`[IPC] Account ${accountId} not yet added to xmppManager, subscription deferred`);
+    // Account doesn't exist yet - this is OK for loaded accounts that haven't been connected
+    // The subscription will be set up when connect is called
+    globalState.stanzaSubscribed[accountId] = false; // Allow retry later
+  }
 });
 
 ipcMain.handle('get-accounts', () => {
@@ -97,6 +112,33 @@ ipcMain.handle('connect-account', (event, accountId: string): IpcResponse => {
   console.log(`[IPC] connect-account handler called with accountId: ${accountId}`);
   try {
     xmppManager.connect(accountId);
+    
+    // Re-attempt subscription setup now that account exists in xmppManager
+    // This handles the case where account was loaded from storage but not yet added
+    if (globalState.stanzaSubscribed && !globalState.stanzaSubscribed[accountId]) {
+      console.log(`[IPC] Setting up deferred subscription for ${accountId}`);
+      try {
+        xmppManager.onMessage(accountId, (stanza) => {
+          const sender = globalState.stanzaSenders?.[accountId];
+          if (sender && !sender.isDestroyed()) {
+            sender.send('stanza-response', accountId, stanza);
+          }
+        });
+
+        xmppManager.onStatus(accountId, (status) => {
+          console.log(`[IPC] Sending status update to renderer: ${accountId} -> ${status}`);
+          const sender = globalState.stanzaSenders?.[accountId];
+          if (sender && !sender.isDestroyed()) {
+            sender.send('account-status', accountId, status);
+          }
+        });
+        globalState.stanzaSubscribed[accountId] = true;
+        console.log(`[IPC] Deferred subscription set up for ${accountId}`);
+      } catch (subErr) {
+        console.error(`[IPC] Failed to set up deferred subscription:`, subErr);
+      }
+    }
+    
     console.log(`[IPC] Connect request processed`);
     return { success: true };
   } catch (err) {
@@ -126,9 +168,16 @@ ipcMain.handle('disconnect-account', (event, accountId: string): IpcResponse => 
   }
 });
 
-ipcMain.handle('remove-account', (event, accountId: string): IpcResponse => {
+ipcMain.handle('remove-account', async (event, accountId: string): Promise<IpcResponse> => {
   try {
-    xmppManager.removeAccount(accountId);
+    // Clean up stanza subscription state
+    if (globalState.stanzaSubscribed) {
+      delete globalState.stanzaSubscribed[accountId];
+    }
+    if (globalState.stanzaSenders) {
+      delete globalState.stanzaSenders[accountId];
+    }
+    await xmppManager.removeAccount(accountId);
     return { success: true };
   } catch (err) {
     const error = err as Error;

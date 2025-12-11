@@ -4,6 +4,8 @@
 
 Establish TypeScript foundation across the entire codebase to enable type-safe development of the Performances feature. This is a focused technical sprint with no new features.
 
+**Status:** Completed on branch `sprint-0-typescript-migration` and ready for PR/merge. All planned Sprint 0 tasks are done.
+
 ## ✅ SPRINT COMPLETE
 
 All success criteria have been met:

@@ -149,14 +149,28 @@ export class XMPPManager {
 
   /**
    * Connect an account to the XMPP server
+   * If the account hasn't been added yet but exists in stored credentials, add it first
    */
   connect(accountId: string): void {
     console.log(`[XMPP] connect() called for ${accountId}`);
-    const account = this.accounts[accountId];
+    let account = this.accounts[accountId];
 
+    // Auto-add account from stored credentials if not already added
     if (!account) {
-      console.error(`[XMPP] Account ${accountId} not found`);
-      throw new Error('Account not found');
+      const storedData = this.accountData[accountId];
+      if (storedData) {
+        console.log(`[XMPP] Account ${accountId} not in manager but found in stored data, adding now`);
+        this.addAccount(accountId, storedData);
+        account = this.accounts[accountId];
+      } else {
+        console.error(`[XMPP] Account ${accountId} not found in manager or stored data`);
+        throw new Error('Account not found');
+      }
+    }
+
+    // TypeScript doesn't know addAccount ensures account exists, so check again
+    if (!account) {
+      throw new Error('Failed to add account');
     }
 
     // Prevent repeated connect attempts
@@ -248,10 +262,21 @@ export class XMPPManager {
     const source = this.accountData[accountId]?._source || 'ui';
     const account = this.accounts[accountId];
 
-    // Disconnect first and wait for it to complete
+    // First, clear the callbacks so no more events fire to renderer
+    if (account) {
+      account.onStanza = null;
+      account.onStatus = null;
+    }
+
+    // Remove from our accounts map BEFORE stopping to prevent any callbacks
+    // from trying to access the account during shutdown
+    delete this.accounts[accountId];
+    delete this.accountData[accountId];
+
+    // Now disconnect and clean up
     try {
       if (account && account.xmpp) {
-        // Remove all event listeners to prevent memory leaks
+        // Remove all event listeners FIRST to prevent any callbacks during shutdown
         if (account.listeners) {
           const { errorListener, statusListener, onlineListener, offlineListener, stanzaListener } =
             account.listeners;
@@ -263,16 +288,35 @@ export class XMPPManager {
           console.log(`[XMPP] Removed event listeners for ${accountId}`);
         }
 
-        await account.xmpp.stop();
+        // CRITICAL: Destroy the underlying socket immediately to prevent
+        // the @xmpp/connection crash where _onData tries to write to null parser.
+        // This is more aggressive than stop() but prevents race conditions.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const socket = (account.xmpp as any).socket;
+        if (socket) {
+          // Remove all socket listeners first
+          socket.removeAllListeners();
+          // Destroy the socket immediately - this prevents any more data events
+          socket.destroy();
+          console.log(`[XMPP] Socket destroyed for ${accountId}`);
+        }
+
+        // Now we can safely stop (it will handle the null socket gracefully)
+        try {
+          await Promise.race([
+            account.xmpp.stop().catch(() => {}), // Ignore errors since socket is destroyed
+            new Promise(resolve => setTimeout(resolve, 500)) // Short timeout
+          ]);
+        } catch {
+          // Ignore - socket is already destroyed
+        }
       }
     } catch (err) {
       console.error(`[XMPP] Error disconnecting account ${accountId}:`, err);
     }
 
-    // Now safely remove from storage and memory
+    // Remove from storage
     removeAccountFromStore(accountId, source);
-    delete this.accounts[accountId];
-    delete this.accountData[accountId];
     console.log(`[XMPP] Account ${accountId} fully removed`);
   }
 

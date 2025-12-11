@@ -1,5 +1,7 @@
 # Virtuoso To-Do List
 
+> Sprint 0 status: ✅ completed (all planned Sprint 0 tasks are done and the branch is ready for PR/merge).
+
 ## Documentation
 - [x] Project idea and purpose
 - [x] MVP features
