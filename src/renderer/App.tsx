@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { FC } from 'react';
 import toast from 'react-hot-toast';
 import { FiPlus, FiTrash2, FiCheckCircle, FiAlertCircle, FiCircle, FiLoader, FiSave } from 'react-icons/fi';
@@ -47,6 +47,8 @@ const App: FC = () => {
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const accountIdInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Load accounts and templates from backend on mount
@@ -77,18 +79,21 @@ const App: FC = () => {
   }, []);
 
   // Memoized stanzaListener to avoid duplicate subscriptions
-  const stanzaListener = React.useCallback((_event: any, accountId: string, stanza: string) => {
+  const stanzaListener = React.useCallback((accountId: string, stanza: string) => {
     setResponses(prev => [...prev, { accountId, stanza }]);
   }, []);
 
   // Memoized statusListener to update account status
-  const statusListener = React.useCallback((_event: any, accountId: string, status: string) => {
-    console.log(`[UI] Status update for ${accountId}: ${status}`);
-    setAccounts(prev =>
-      prev.map(acc =>
+  const statusListener = React.useCallback((accountId: string, status: string) => {
+    console.log(`[UI] Status update for account "${accountId}": "${status}"`);
+    setAccounts(prev => {
+      console.log('[UI] Current accounts:', prev.map(a => ({ id: a.id, status: a.status })));
+      const updated = prev.map(acc =>
         acc.id === accountId ? { ...acc, status } : acc
-      )
-    );
+      );
+      console.log('[UI] Updated accounts:', updated.map(a => ({ id: a.id, status: a.status })));
+      return updated;
+    });
   }, []);
 
   // Track if listener is registered to prevent duplicates from React Strict Mode
@@ -120,8 +125,25 @@ const App: FC = () => {
     });
   }, [accounts]);
 
+  // Force focus on account ID input when add form is shown
+  useEffect(() => {
+    if (showAddForm && accountIdInputRef.current) {
+      // Clear any existing focus first
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        accountIdInputRef.current?.focus();
+        // Also try selecting any existing text
+        accountIdInputRef.current?.select();
+      });
+    }
+  }, [showAddForm]);
+
   const handleLocalChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setLocalForm({ ...localForm, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setLocalForm(prev => ({ ...prev, [name]: value }));
   };
 
   const handleAddAccount = async (e: React.FormEvent) => {
@@ -136,7 +158,22 @@ const App: FC = () => {
     });
 
     if (result?.success) {
-      setAccounts([...accounts, { ...localForm, status: 'disconnected' }]);
+      const newAccount = { 
+        id: localForm.id,
+        jid: localForm.jid,
+        password: localForm.password,
+        host: localForm.host,
+        port: localForm.port,
+        connectionMethod: localForm.connectionMethod,
+        status: 'disconnected' 
+      };
+      setAccounts([...accounts, newAccount]);
+      // Immediately subscribe to status updates for the new account
+      console.log(`[UI] Subscribing to stanza updates for new account: ${localForm.id}`);
+      window.electron?.send('subscribe-stanza', localForm.id);
+      subscribedRef.current.add(localForm.id);
+      // Manually trigger status update for new account since it starts disconnected
+      console.log(`[UI] Setting initial status for new account ${localForm.id}: disconnected`);
       setLocalForm({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
       setShowAddForm(false);
       toast.success(`Account "${localForm.id}" added successfully`);
@@ -155,21 +192,45 @@ const App: FC = () => {
     await window.electron?.invoke('disconnect-account', id);
   };
 
-  const handleDeleteAccount = async () => {
+  const openDeleteConfirm = () => {
     if (!selectedAccount) return;
-    const confirmed = confirm(`Are you sure you want to delete the account "${selectedAccount}"?\n\nNote: Accounts from accounts.json will only be removed from the app, not from the file. Edit accounts.json manually to permanently delete them.`);
-    if (!confirmed) return;
+    setConfirmDeleteId(selectedAccount);
+  };
+
+  const cancelDelete = () => {
+    setConfirmDeleteId(null);
+    // Restore focus to app
+    window.focus();
+    document.body.focus();
+  };
+
+  const confirmDelete = async () => {
+    const targetId = confirmDeleteId;
+    setConfirmDeleteId(null);
+    if (!targetId) return;
+
+    // Disconnect first if connected
+    const account = accounts.find(acc => acc.id === targetId);
+    if (account && account.status && account.status !== 'disconnected') {
+      await window.electron?.invoke('disconnect-account', targetId);
+    }
 
     // @ts-ignore
-    const result = await window.electron?.invoke('remove-account', selectedAccount);
+    const result = await window.electron?.invoke('remove-account', targetId);
     if (result?.success) {
-      setAccounts(accs => accs.filter(acc => acc.id !== selectedAccount));
+      // Clean up subscription tracking
+      subscribedRef.current.delete(targetId);
+      setAccounts(accs => accs.filter(acc => acc.id !== targetId));
       setSelectedAccount(null);
       setResponses([]);
       toast.success('Account deleted');
     } else {
       toast.error(result?.error || 'Failed to remove account');
     }
+
+    // Ensure focus returns to form if user adds again
+    window.focus();
+    document.body.focus();
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -315,7 +376,13 @@ const App: FC = () => {
         <div className="sidebar-header">
           <button
             className="add-account-btn"
-            onClick={() => { setShowAddForm(true); setSelectedAccount(null); }}
+            onClick={(e) => { 
+              // Blur the button to release focus
+              (e.target as HTMLButtonElement).blur();
+              setSelectedAccount(null); 
+              setLocalForm({ id: '', jid: '', password: '', host: '', port: '5222', connectionMethod: 'auto' });
+              setShowAddForm(true);
+            }}
           >
             <FiPlus style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
             Add Account
@@ -374,6 +441,7 @@ const App: FC = () => {
             <div className="form-group">
               <label className="form-label">Account ID</label>
               <input
+                ref={accountIdInputRef}
                 className="form-input"
                 type="text"
                 name="id"
@@ -458,7 +526,7 @@ const App: FC = () => {
           <div className="content-header">
             <h2 className="content-title">Send XML Stanza</h2>
             <button
-              onClick={handleDeleteAccount}
+              onClick={openDeleteConfirm}
               className="delete-account-btn"
             >
               <FiTrash2 style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
@@ -679,6 +747,22 @@ const App: FC = () => {
               Select an account from the sidebar to send stanzas<br />
               or click "Add Account" to create a new one
             </p>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteId && (
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div className="modal-content" style={{ background: 'var(--bg-primary)', padding: '1.5rem', borderRadius: 'var(--radius-md)', width: '320px', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Delete Account?</h3>
+            <p style={{ marginTop: 0, marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Are you sure you want to delete the account "{confirmDeleteId}"?
+              Accounts from accounts.json will only be removed from the app, not from the file.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button onClick={cancelDelete} className="clear-btn">Cancel</button>
+              <button onClick={confirmDelete} className="delete-account-btn">Delete</button>
+            </div>
           </div>
         </div>
       )}
