@@ -126,16 +126,16 @@ export function useComposer() {
   }, []);
 
   const captureSend = useCallback((accountAlias: string, xml: string, generatedIds?: Record<string, string>) => {
+    const data = generatedIds
+      ? { type: 'send' as const, xml, generatedIds }
+      : { type: 'send' as const, xml };
+
     const stanza: Stanza = {
       id: generateStanzaId(),
       type: 'send',
       accountAlias,
       description: `${accountAlias} sends stanza`,
-      data: {
-        type: 'send',
-        xml,
-        generatedIds,
-      },
+      data,
     };
     dispatch({ type: 'ADD_STANZA', stanza, account: buildAccount(accountAlias) });
   }, []);
@@ -158,17 +158,17 @@ export function useComposer() {
   }, []);
 
   const addAssertion = useCallback((accountAlias: string, assertionType: 'xpath' | 'contains' | 'regex' | 'equals', expression: string, expected?: string) => {
+    const data =
+      expected !== undefined
+        ? { type: 'assert' as const, assertionType, expression, expected }
+        : { type: 'assert' as const, assertionType, expression };
+
     const stanza: Stanza = {
       id: generateStanzaId(),
       type: 'assert',
       accountAlias,
       description: `Assert ${assertionType}: ${expression}`,
-      data: {
-        type: 'assert',
-        assertionType,
-        expression,
-        expected,
-      },
+      data,
     };
     dispatch({ type: 'ADD_STANZA', stanza, account: buildAccount(accountAlias) });
   }, []);
