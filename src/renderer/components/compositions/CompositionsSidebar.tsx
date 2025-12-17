@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { ReactElement } from 'react';
-import { FiPlus, FiPlay, FiEdit2, FiTrash2, FiCircle, FiMusic, FiRadio } from 'react-icons/fi';
+import { FiPlus, FiCircle, FiMusic, FiRadio, FiUpload } from 'react-icons/fi';
 import type { Composition, Stanza } from '../../../types/composition';
 import type { Performance } from '../../../types/performance';
 import { ComposerPanel } from './ComposerPanel';
@@ -142,9 +142,14 @@ export function CompositionsSidebar({
           <div className="compositions-header">
             <h3>Compositions</h3>
             {!isComposing && !viewingComposition && (
-              <button className="compose-button" onClick={onStart} aria-label="Compose New">
-                <FiPlus /> New
-              </button>
+              <div className="header-buttons">
+                <button className="btn-small btn-secondary" onClick={onImportComposition} title="Import composition">
+                  <FiUpload /> Import
+                </button>
+                <button className="compose-button" onClick={onStart} aria-label="Compose New">
+                  <FiPlus /> New
+                </button>
+              </div>
             )}
             {isComposing && (
               <div className="recording-pill" title="Composing">
@@ -169,19 +174,8 @@ export function CompositionsSidebar({
             <CompositionList
               compositions={compositions}
               loading={loading}
-              onPlay={onPlay}
-              onEdit={onEdit}
-              onDelete={onDelete}
               onView={handleViewComposition}
             />
-          )}
-
-          {!isComposing && !viewingComposition && (
-            <div className="composition-actions-hint">
-              <div className="hint-row"><FiPlay /> Perform</div>
-              <div className="hint-row"><FiEdit2 /> Edit</div>
-              <div className="hint-row"><FiTrash2 /> Delete</div>
-            </div>
           )}
         </>
       )}
@@ -201,7 +195,6 @@ export function CompositionsSidebar({
               loading={loading}
               onPerform={onPlay}
               onExport={onExportComposition || (() => {})}
-              onImport={onImportComposition || (() => {})}
               onViewPerformance={handleViewPerformance}
             />
           )}

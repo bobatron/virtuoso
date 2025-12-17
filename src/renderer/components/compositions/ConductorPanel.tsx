@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { ReactElement } from 'react';
-import { FiPlay, FiDownload, FiUpload, FiCheckCircle, FiXCircle, FiClock, FiList } from 'react-icons/fi';
+import { FiPlay, FiDownload, FiCheckCircle, FiXCircle, FiClock, FiList } from 'react-icons/fi';
 import type { Composition } from '../../../types/composition';
 import type { Performance } from '../../../types/performance';
 
@@ -10,7 +10,6 @@ interface ConductorPanelProps {
   loading: boolean;
   onPerform: (composition: Composition) => void;
   onExport: (composition: Composition) => void;
-  onImport: () => void;
   onViewPerformance: (performance: Performance) => void;
 }
 
@@ -31,7 +30,6 @@ export function ConductorPanel({
   loading,
   onPerform,
   onExport,
-  onImport,
   onViewPerformance,
 }: ConductorPanelProps): ReactElement {
   const [viewMode, setViewMode] = useState<ViewMode>('compositions');
@@ -40,9 +38,6 @@ export function ConductorPanel({
     <div className="conductor-panel">
       <div className="conductor-header">
         <h3>🎭 Conductor</h3>
-        <button className="btn-small btn-secondary" onClick={onImport} title="Import composition">
-          <FiUpload /> Import
-        </button>
       </div>
 
       <div className="conductor-tabs">

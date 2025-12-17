@@ -1,18 +1,15 @@
 import React from 'react';
 import type { ReactElement } from 'react';
-import { FiPlay, FiEdit2, FiTrash2, FiEye } from 'react-icons/fi';
+import { FiEye } from 'react-icons/fi';
 import type { Composition } from '../../../types/composition';
 
 interface CompositionListProps {
   compositions: Composition[];
   loading: boolean;
-  onPlay: (composition: Composition) => void;
-  onEdit: (composition: Composition) => void;
-  onDelete: (compositionId: string) => void;
   onView?: (composition: Composition) => void;
 }
 
-export function CompositionList({ compositions, loading, onPlay, onEdit, onDelete, onView }: CompositionListProps): ReactElement {
+export function CompositionList({ compositions, loading, onView }: CompositionListProps): ReactElement {
   if (loading) {
     return <div className="composition-list loading">Loading compositions...</div>;
   }
@@ -42,15 +39,6 @@ export function CompositionList({ compositions, loading, onPlay, onEdit, onDelet
           <div className="composition-item-actions" onClick={(e) => e.stopPropagation()}>
             <button className="btn-icon" title="View" onClick={() => onView?.(composition)}>
               <FiEye />
-            </button>
-            <button className="btn-icon" title="Perform" onClick={() => onPlay(composition)}>
-              <FiPlay />
-            </button>
-            <button className="btn-icon" title="Edit" onClick={() => onEdit(composition)}>
-              <FiEdit2 />
-            </button>
-            <button className="btn-icon danger" title="Delete" onClick={() => onDelete(composition.id)}>
-              <FiTrash2 />
             </button>
           </div>
         </div>
