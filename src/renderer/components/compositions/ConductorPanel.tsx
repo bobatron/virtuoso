@@ -51,7 +51,7 @@ export function ConductorPanel({
           className={`conductor-tab ${viewMode === 'performances' ? 'active' : ''}`}
           onClick={() => setViewMode('performances')}
         >
-          <FiClock /> History ({performances.length})
+          <FiClock /> Performances ({performances.length})
         </button>
       </div>
 
