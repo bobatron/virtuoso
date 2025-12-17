@@ -77,6 +77,7 @@ describe('buildCompositionFromState', () => {
       accounts: new Map([
         ['alice', { alias: 'alice', jid: 'alice@example.com' }],
       ]),
+      targetComposition: null,
     };
 
     const comp = buildCompositionFromState(state);

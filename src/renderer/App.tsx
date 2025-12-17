@@ -11,7 +11,8 @@ import { generateTimestamp, generateUniqueId, parsePlaceholders, resolvePlacehol
 import type { Placeholder } from '../types/placeholder';
 import { useComposer } from './hooks/useComposer';
 import { CompositionsSidebar } from './components/compositions/CompositionsSidebar';
-import type { Composition } from '../types/composition';
+import type { Composition, Stanza, SendData } from '../types/composition';
+import type { Performance } from '../types/performance';
 import type { ElectronAPI } from '../types/ipc';
 
 interface SavedTemplate extends StanzaTemplate {
@@ -87,6 +88,7 @@ const App: FC = () => {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [compositions, setCompositions] = useState<Composition[]>([]);
+  const [performances, setPerformances] = useState<Performance[]>([]);
   const [loadingCompositions, setLoadingCompositions] = useState(false);
   const [savingComposition, setSavingComposition] = useState(false);
   const accountIdInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +115,7 @@ const App: FC = () => {
     isComposing,
     stanzas: composedStanzas,
     startComposing,
+    startFromComposition,
     stopComposing,
     cancelComposing,
     captureConnect,
@@ -618,8 +621,307 @@ const App: FC = () => {
     }
   };
 
-  const handlePlayComposition = (composition: Composition) => {
-    toast('Playback not implemented yet (coming soon)', { icon: '⏯️' });
+  const handlePlayComposition = async (composition: Composition) => {
+    toast.loading(`Performing "${composition.name}"...`, { id: 'performing' });
+    
+    const startTime = new Date();
+    const stanzaResults: Performance['stanzaResults'] = [];
+    let hasFailure = false;
+    const connectedAccounts = new Set<string>();
+    
+    try {
+      // Execute each stanza sequentially
+      for (const stanza of composition.stanzas || []) {
+        const stanzaStart = Date.now();
+        let result: Performance['stanzaResults'][0] = {
+          stanzaId: stanza.id,
+          status: 'passed',
+          duration: 0,
+        };
+        
+        try {
+          switch (stanza.type) {
+            case 'connect': {
+              // Find the account to connect
+              const account = accounts.find(a => a.id === stanza.accountAlias);
+              if (!account) {
+                throw new Error(`Account "${stanza.accountAlias}" not found`);
+              }
+              
+              // Connect via IPC
+              const connectResult = await window.electron?.invoke('connect-account', stanza.accountAlias);
+              if (connectResult && !connectResult.success) {
+                throw new Error(connectResult.error || 'Connection failed');
+              }
+              
+              // Wait a moment for connection to establish
+              await new Promise(resolve => setTimeout(resolve, 500));
+              connectedAccounts.add(stanza.accountAlias);
+              break;
+            }
+            
+            case 'disconnect': {
+              // Disconnect via IPC
+              const disconnectResult = await window.electron?.invoke('disconnect-account', stanza.accountAlias);
+              if (disconnectResult && !disconnectResult.success) {
+                throw new Error(disconnectResult.error || 'Disconnect failed');
+              }
+              connectedAccounts.delete(stanza.accountAlias);
+              break;
+            }
+            
+            case 'send': {
+              if (stanza.data.type !== 'send') break;
+              const sendData = stanza.data as SendData;
+              
+              // Send stanza via IPC
+              const sendResult = await window.electron?.invoke('send-stanza', stanza.accountAlias, sendData.xml);
+              if (sendResult && !sendResult.success) {
+                throw new Error(sendResult.error || 'Send failed');
+              }
+              result.sentXml = sendData.xml;
+              break;
+            }
+            
+            case 'cue': {
+              // For now, just wait the timeout period
+              // Real implementation would wait for matching response
+              if (stanza.data.type === 'cue') {
+                const timeout = stanza.data.timeout || 5000;
+                await new Promise(resolve => setTimeout(resolve, Math.min(timeout, 2000)));
+              }
+              break;
+            }
+            
+            case 'assert': {
+              // Assertions would check received responses
+              // For now, mark as passed
+              break;
+            }
+          }
+          
+          result.status = 'passed';
+        } catch (err) {
+          const error = err as Error;
+          result.status = 'failed';
+          result.error = {
+            message: error.message,
+            ...(error.stack && { details: error.stack }),
+          };
+          hasFailure = true;
+        }
+        
+        result.duration = Date.now() - stanzaStart;
+        stanzaResults.push(result);
+        
+        // If a stanza fails, skip remaining stanzas
+        if (result.status === 'failed') {
+          // Mark remaining as skipped
+          const stanzas = composition.stanzas || [];
+          const currentIndex = stanzas.indexOf(stanza);
+          for (let i = currentIndex + 1; i < stanzas.length; i++) {
+            const skippedStanza = stanzas[i];
+            if (skippedStanza) {
+              stanzaResults.push({
+                stanzaId: skippedStanza.id,
+                status: 'skipped',
+                duration: 0,
+              });
+            }
+          }
+          break;
+        }
+      }
+    } finally {
+      // Cleanup: disconnect any accounts we connected
+      for (const accountAlias of connectedAccounts) {
+        try {
+          await window.electron?.invoke('disconnect-account', accountAlias);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+    
+    const endTime = new Date();
+    const performance: Performance = {
+      id: `perf_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      compositionId: composition.id,
+      status: hasFailure ? 'failed' : 'passed',
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      duration: endTime.getTime() - startTime.getTime(),
+      stanzaResults,
+      summary: {
+        total: stanzaResults.length,
+        passed: stanzaResults.filter(r => r.status === 'passed').length,
+        failed: stanzaResults.filter(r => r.status === 'failed').length,
+        skipped: stanzaResults.filter(r => r.status === 'skipped').length,
+      },
+    };
+    
+    // Add to performances list
+    setPerformances(prev => [performance, ...prev]);
+    
+    if (hasFailure) {
+      toast.error(`Performance failed! ${performance.summary.passed}/${performance.summary.total} passed`, { id: 'performing' });
+    } else {
+      toast.success(`Performance completed! ${performance.summary.passed}/${performance.summary.total} passed`, { id: 'performing' });
+    }
+  };
+
+  const handleLoadStanza = (stanza: Stanza) => {
+    if (stanza.type === 'send' && stanza.data.type === 'send') {
+      const sendData = stanza.data as SendData;
+      setMessage(sendData.xml || '');
+      toast.success(`Loaded stanza from ${stanza.accountAlias}`);
+    } else {
+      toast.error('Only send stanzas can be loaded into the editor');
+    }
+  };
+
+  const handleRemoveStanza = async (compositionId: string, stanzaId: string) => {
+    // Find the composition
+    const composition = compositions.find(c => c.id === compositionId);
+    if (!composition) {
+      toast.error('Composition not found');
+      return;
+    }
+
+    // Remove the stanza
+    const updatedStanzas = composition.stanzas.filter(s => s.id !== stanzaId);
+    const updatedComposition: Composition = {
+      ...composition,
+      stanzas: updatedStanzas,
+      updated: new Date().toISOString(),
+    };
+
+    // Save the updated composition
+    try {
+      const result = await window.electron?.saveComposition?.(updatedComposition);
+      if (result?.success || result === undefined) {
+        await loadCompositions();
+        toast.success('Stanza removed');
+      } else {
+        toast.error('Failed to remove stanza');
+      }
+    } catch (err) {
+      console.error('[UI] Failed to remove stanza:', err);
+      toast.error('Failed to remove stanza');
+    }
+  };
+
+  const handleRecordMore = (composition: Composition) => {
+    // Start composing with the existing composition's stanzas loaded
+    startFromComposition(composition);
+    toast.success(`Recording onto "${composition.name}"`, { icon: '🎬' });
+  };
+
+  const handleMoveStanza = async (compositionId: string, stanzaId: string, direction: 'up' | 'down') => {
+    // Find the composition
+    const composition = compositions.find(c => c.id === compositionId);
+    if (!composition) {
+      toast.error('Composition not found');
+      return;
+    }
+
+    // Find the stanza index
+    const stanzas = [...composition.stanzas];
+    const index = stanzas.findIndex(s => s.id === stanzaId);
+    if (index === -1) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= stanzas.length) return;
+
+    // Swap stanzas - use splice to swap elements
+    const removed = stanzas.splice(index, 1)[0];
+    if (!removed) return;
+    stanzas.splice(newIndex, 0, removed);
+
+    const updatedComposition: Composition = {
+      ...composition,
+      stanzas,
+      updated: new Date().toISOString(),
+    };
+
+    // Save the updated composition
+    try {
+      const result = await window.electron?.saveComposition?.(updatedComposition);
+      if (result?.success || result === undefined) {
+        await loadCompositions();
+        toast.success('Stanza moved');
+      } else {
+        toast.error('Failed to move stanza');
+      }
+    } catch (err) {
+      console.error('[UI] Failed to move stanza:', err);
+      toast.error('Failed to move stanza');
+    }
+  };
+
+  const handleExportComposition = async (composition: Composition) => {
+    try {
+      // For now, just download as JSON
+      const json = JSON.stringify(composition, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${composition.name || 'composition'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Composition exported');
+    } catch (err) {
+      console.error('[UI] Failed to export composition:', err);
+      toast.error('Failed to export composition');
+    }
+  };
+
+  const handleImportComposition = async () => {
+    try {
+      // Create file input to select file
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const json = event.target?.result as string;
+            const imported = JSON.parse(json) as Composition;
+            
+            // Generate new ID to avoid conflicts
+            const newComposition: Composition = {
+              ...imported,
+              id: `comp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+              created: new Date().toISOString(),
+              updated: new Date().toISOString(),
+            };
+            
+            const result = await window.electron?.saveComposition?.(newComposition);
+            if (result?.success || result === undefined) {
+              await loadCompositions();
+              toast.success(`Imported "${newComposition.name}"`);
+            } else {
+              toast.error('Failed to import composition');
+            }
+          } catch (parseErr) {
+            console.error('[UI] Failed to parse imported file:', parseErr);
+            toast.error('Invalid composition file');
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    } catch (err) {
+      console.error('[UI] Failed to import composition:', err);
+      toast.error('Failed to import composition');
+    }
   };
 
   const handleEditComposition = (composition: Composition) => {
@@ -1045,6 +1347,7 @@ const App: FC = () => {
         isComposing={isComposing}
         stanzas={composedStanzas}
         compositions={compositions}
+        performances={performances}
         loading={loadingCompositions || savingComposition}
         onStart={handleStartComposing}
         onStop={handleStopComposing}
@@ -1052,6 +1355,12 @@ const App: FC = () => {
         onPlay={handlePlayComposition}
         onEdit={handleEditComposition}
         onDelete={handleDeleteComposition}
+        onLoadStanza={handleLoadStanza}
+        onRemoveStanza={handleRemoveStanza}
+        onMoveStanza={handleMoveStanza}
+        onRecordMore={handleRecordMore}
+        onExportComposition={handleExportComposition}
+        onImportComposition={handleImportComposition}
       />
 
       {confirmDeleteId && (

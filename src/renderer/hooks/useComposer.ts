@@ -6,10 +6,12 @@ interface ComposerState {
   stanzas: Stanza[];
   accounts: Map<string, AccountReference>;
   startTime: number | null;
+  targetComposition: Composition | null; // When recording onto existing composition
 }
 
 type ComposerAction =
   | { type: 'START' }
+  | { type: 'START_FROM_COMPOSITION'; composition: Composition }
   | { type: 'CANCEL' }
   | { type: 'ADD_STANZA'; stanza: Stanza; account?: AccountReference }
   | { type: 'RESET' };
@@ -19,6 +21,7 @@ export const initialComposerState: ComposerState = {
   stanzas: [],
   accounts: new Map(),
   startTime: null,
+  targetComposition: null,
 };
 
 function cloneAccounts(accounts: Map<string, AccountReference>): Map<string, AccountReference> {
@@ -41,13 +44,29 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         stanzas: [],
         accounts: new Map(),
         startTime: Date.now(),
+        targetComposition: null,
       };
+    case 'START_FROM_COMPOSITION': {
+      // Start composing with existing composition's stanzas and accounts
+      const existingAccounts = new Map<string, AccountReference>();
+      for (const acc of action.composition.accounts || []) {
+        existingAccounts.set(acc.alias, acc);
+      }
+      return {
+        isComposing: true,
+        stanzas: [...(action.composition.stanzas || [])],
+        accounts: existingAccounts,
+        startTime: Date.now(),
+        targetComposition: action.composition,
+      };
+    }
     case 'CANCEL':
       return {
         isComposing: false,
         stanzas: [],
         accounts: new Map(),
         startTime: null,
+        targetComposition: null,
       };
     case 'ADD_STANZA': {
       if (!state.isComposing) return state;
@@ -78,6 +97,18 @@ export function buildCompositionFromState(state: ComposerState): Composition | n
   }
 
   const now = new Date().toISOString();
+  
+  // If we're recording onto an existing composition, preserve its metadata
+  if (state.targetComposition) {
+    return {
+      ...state.targetComposition,
+      updated: now,
+      accounts: Array.from(state.accounts.values()),
+      stanzas: state.stanzas,
+    };
+  }
+
+  // New composition
   return {
     id: generateCompositionId(),
     name: 'New Composition',
@@ -97,6 +128,10 @@ export function useComposer() {
 
   const startComposing = useCallback(() => {
     dispatch({ type: 'START' });
+  }, []);
+
+  const startFromComposition = useCallback((composition: Composition) => {
+    dispatch({ type: 'START_FROM_COMPOSITION', composition });
   }, []);
 
   const cancelComposing = useCallback(() => {
@@ -182,7 +217,9 @@ export function useComposer() {
   return {
     isComposing: state.isComposing,
     stanzas: state.stanzas,
+    targetComposition: state.targetComposition,
     startComposing,
+    startFromComposition,
     stopComposing,
     cancelComposing,
     captureConnect,
