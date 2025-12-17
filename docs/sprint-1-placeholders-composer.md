@@ -11,7 +11,7 @@ Implement the template placeholder system and core Composer functionality, enabl
 - [x] `{{$id}}` generates unique IDs and displays them
 - [x] Composition data model implemented (types scaffolded)
 - [x] Composer captures connect/disconnect/send actions
-- [ ] Basic sequential playback works
+- [x] Basic sequential playback works (Conductor performs compositions via real XMPP)
 - [x] Compositions saved to JSON files (Electron) or local fallback (dev)
 - [x] Right sidebar shows Compositions list
 
@@ -19,8 +19,20 @@ Implement the template placeholder system and core Composer functionality, enabl
 - **Terminology Change**: Renamed "Performance" to "Composition" for saved scripts. "Performance" now refers to the result of Conducting a Composition.
 - Implemented compositions sidebar UI with add/delete/edit flows; save now uses an in-app modal (no system prompts).
 - Composer captures connect/disconnect/send actions and saves compositions to Electron JSON store; when running Vite-only dev, falls back to localStorage to avoid data loss.
-- Added edit modal for composition name/description; delete works; playback still pending (button shows “coming soon”).
+- Added edit modal for composition name/description; delete works.
 - Plan change: removed system dialogs (prompt/confirm) in favor of React modals to prevent Electron focus issues.
+- **Composer Tab Features (completed)**:
+  - View compositions in list, click to view details
+  - Load stanzas from composition into main UI
+  - Remove individual stanzas from compositions
+  - Record onto existing compositions ("Record More")
+  - Reorder stanzas with up/down buttons
+  - Import compositions from JSON files
+- **Conductor Tab Features (completed)**:
+  - Perform compositions with real XMPP execution (connect, send stanzas, disconnect)
+  - Export compositions as JSON files
+  - View performance results with pass/fail status, timing, and error details
+  - Performances tab shows history of all executed compositions
 
 ## 📦 Prerequisites
 
